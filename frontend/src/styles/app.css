@@ -1,0 +1,33 @@
+* { box-sizing: border-box; font-family: Inter, system-ui, sans-serif; }
+body { margin: 0; background: #f4f6fb; }
+.top-nav { display: flex; gap: 16px; padding: 12px 18px; background: #1a2034; color: #fff; align-items: center; }
+.top-nav a { color: #fff; text-decoration: none; }
+.top-nav button { margin-left: auto; }
+
+.auth-wrap { height: 100vh; display: grid; place-items: center; }
+.auth-card { display: grid; gap: 8px; width: 320px; background: #fff; padding: 18px; border-radius: 12px; }
+.auth-card input, .auth-card button { padding: 10px; }
+.error { color: #dc2a2a; }
+
+.chat-shell { width: min(980px, 95vw); margin: 20px auto; background: #fff; border-radius: 14px; display: flex; flex-direction: column; height: calc(100vh - 80px); }
+.chat-header { padding: 14px; border-bottom: 1px solid #e9edf5; font-weight: 700; }
+.chat-history { flex: 1; overflow: auto; padding: 14px; background: linear-gradient(#f8faff,#f4f8ff); }
+.msg-row { display: flex; margin-bottom: 10px; }
+.msg-row.agent { justify-content: flex-start; }
+.msg-row.user { justify-content: flex-end; }
+.msg-bubble { max-width: 70%; border-radius: 12px; padding: 10px 12px; background: #fff; box-shadow: 0 2px 10px rgba(0,0,0,.06); }
+.msg-row.user .msg-bubble { background: #266bff; color: #fff; }
+.agent-name { font-size: 12px; color: #68738d; margin-bottom: 4px; }
+.quick-replies { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.quick-replies button, .upload-row button, .chat-input button, .top-nav button { border: none; border-radius: 10px; cursor: pointer; padding: 8px 10px; }
+.quick-replies button { background: #eaf1ff; }
+.upload-row { border-top: 1px solid #e9edf5; padding: 10px; display: flex; gap: 8px; }
+.chat-input { display: flex; gap: 8px; padding: 10px; border-top: 1px solid #e9edf5; }
+.chat-input input { flex: 1; padding: 10px; border-radius: 8px; border: 1px solid #d8dfef; }
+.typing { font-size: 12px; color: #6f7892; margin: 8px; }
+
+.dashboard { width: min(1000px,95vw); margin: 20px auto; }
+.stats-grid { display: grid; grid-template-columns: repeat(auto-fill,minmax(220px,1fr)); gap: 12px; margin-bottom: 16px; }
+.card { background: #fff; padding: 14px; border-radius: 12px; }
+table { width: 100%; background: #fff; border-collapse: collapse; }
+th, td { padding: 10px; border-bottom: 1px solid #edf1f9; text-align: left; }
