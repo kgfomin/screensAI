@@ -5,11 +5,9 @@ import fs from 'fs';
 import { requireAuth } from '../middleware/auth.js';
 import { query } from '../db/client.js';
 import {
-  ensureWelcomeMessage,
-  fetchMessages,
-  getActiveSession,
-  getOrCreateSession,
   handleUserMessage,
+  fetchMessages,
+  getOrCreateSession,
   onImageModerated,
   onLegalUploaded
 } from '../services/agentOrchestrator.js';
@@ -27,35 +25,32 @@ const storage = multer.diskStorage({
 const upload = multer({ storage });
 
 router.get('/session', requireAuth, async (req, res) => {
-  const { session } = await ensureWelcomeMessage(req.user.id);
+  const session = await getOrCreateSession(req.user.id);
   const messages = await fetchMessages(session.id);
+
+  if (messages.length === 0) {
+    const welcome = await handleUserMessage(req.user.id, 'Москва');
+    return res.json({ session, messages: [{ sender: 'agent', content: welcome.content, agent: welcome.agent, quickReplies: welcome.quickReplies }] });
+  }
+
   return res.json({ session, messages });
 });
 
 router.post('/message', requireAuth, async (req, res) => {
   const { text } = req.body;
-  if (!text || !String(text).trim()) return res.status(400).json({ error: 'Text is required' });
+  if (!text) return res.status(400).json({ error: 'Text is required' });
 
-  const reply = await handleUserMessage(req.user.id, String(text));
-  const session = await getActiveSession(req.user.id);
-  await logAction(req.user.id, 'chat_message', { text: String(text) });
-  return res.json({ ...reply, step: session?.step || null });
+  const reply = await handleUserMessage(req.user.id, text);
+  await logAction(req.user.id, 'chat_message', { text });
+  return res.json(reply);
 });
 
 router.post('/upload/image', requireAuth, upload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'file is required' });
-
   const moderation = moderateAsset(req.file);
-  const reply = await onImageModerated(
-    req.user.id,
-    moderation.approved,
-    moderation.reason,
-    req.file.path,
-    moderation.violations
-  );
-  const session = await getActiveSession(req.user.id);
 
-  return res.json({ moderation, reply, step: session?.step || null });
+  const reply = await onImageModerated(req.user.id, moderation.approved, moderation.reason, req.file.path);
+  return res.json({ moderation, reply });
 });
 
 router.post('/upload/legal', requireAuth, upload.single('file'), async (req, res) => {
@@ -67,8 +62,7 @@ router.post('/upload/legal', requireAuth, upload.single('file'), async (req, res
   }
 
   const reply = await onLegalUploaded(req.user.id, req.file.path);
-  const session = await getActiveSession(req.user.id);
-  return res.json({ ok: true, reply, step: session?.step || null });
+  return res.json({ ok: true, reply });
 });
 
 router.get('/campaigns', requireAuth, async (req, res) => {
@@ -83,12 +77,6 @@ router.get('/dashboard', requireAuth, async (req, res) => {
     [req.user.id]
   );
   return res.json(campaigns.rows);
-});
-
-router.post('/new', requireAuth, async (req, res) => {
-  const session = await getOrCreateSession(req.user.id);
-  await query('UPDATE chat_sessions SET step=$1, updated_at=NOW() WHERE id=$2', ['select_target', session.id]);
-  return res.json({ ok: true });
 });
 
 export default router;
