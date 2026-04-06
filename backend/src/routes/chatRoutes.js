@@ -7,6 +7,7 @@ import { query } from '../db/client.js';
 import {
   ensureWelcomeMessage,
   fetchMessages,
+  getActiveSession,
   getOrCreateSession,
   handleUserMessage,
   onImageModerated,
@@ -36,8 +37,9 @@ router.post('/message', requireAuth, async (req, res) => {
   if (!text || !String(text).trim()) return res.status(400).json({ error: 'Text is required' });
 
   const reply = await handleUserMessage(req.user.id, String(text));
+  const session = await getActiveSession(req.user.id);
   await logAction(req.user.id, 'chat_message', { text: String(text) });
-  return res.json(reply);
+  return res.json({ ...reply, step: session?.step || null });
 });
 
 router.post('/upload/image', requireAuth, upload.single('file'), async (req, res) => {
@@ -51,8 +53,9 @@ router.post('/upload/image', requireAuth, upload.single('file'), async (req, res
     req.file.path,
     moderation.violations
   );
+  const session = await getActiveSession(req.user.id);
 
-  return res.json({ moderation, reply });
+  return res.json({ moderation, reply, step: session?.step || null });
 });
 
 router.post('/upload/legal', requireAuth, upload.single('file'), async (req, res) => {
@@ -64,7 +67,8 @@ router.post('/upload/legal', requireAuth, upload.single('file'), async (req, res
   }
 
   const reply = await onLegalUploaded(req.user.id, req.file.path);
-  return res.json({ ok: true, reply });
+  const session = await getActiveSession(req.user.id);
+  return res.json({ ok: true, reply, step: session?.step || null });
 });
 
 router.get('/campaigns', requireAuth, async (req, res) => {

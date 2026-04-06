@@ -160,6 +160,11 @@ function getTargetLabel(parsedTarget) {
   return parsedTarget.targetType === 'region' ? parsedTarget.raw : 'выбранному списку ID';
 }
 
+export async function getActiveSession(userId) {
+  const found = await query('SELECT * FROM chat_sessions WHERE user_id=$1 ORDER BY id DESC LIMIT 1', [userId]);
+  return found.rows[0] || null;
+}
+
 export async function getOrCreateSession(userId) {
   const found = await query('SELECT * FROM chat_sessions WHERE user_id=$1 ORDER BY id DESC LIMIT 1', [userId]);
   if (found.rows[0] && found.rows[0].step !== STEPS.completed) return found.rows[0];

@@ -13,6 +13,10 @@ body { margin: 0; background: #f4f6fb; }
 .chat-shell { width: min(980px, 95vw); margin: 20px auto; background: #fff; border-radius: 14px; display: flex; flex-direction: column; height: calc(100vh - 80px); }
 .chat-header { padding: 14px; border-bottom: 1px solid #e9edf5; font-weight: 700; }
 .chat-history { flex: 1; overflow: auto; padding: 14px; background: linear-gradient(#f8faff,#f4f8ff); }
+
+.step-banner { padding: 12px 14px; background: #f8fbff; border-bottom: 1px solid #e3ebfa; }
+.step-actions { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+.step-actions button { border: none; border-radius: 10px; padding: 7px 10px; cursor: pointer; background: #e9f0ff; }
 .msg-row { display: flex; margin-bottom: 10px; }
 .msg-row.agent { justify-content: flex-start; }
 .msg-row.user { justify-content: flex-end; }
@@ -21,6 +25,7 @@ body { margin: 0; background: #f4f6fb; }
 .agent-name { font-size: 12px; color: #68738d; margin-bottom: 4px; }
 .quick-replies { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
 .quick-replies button, .upload-row button, .chat-input button, .top-nav button { border: none; border-radius: 10px; cursor: pointer; padding: 8px 10px; }
+.upload-row button:disabled { opacity: .45; cursor: not-allowed; }
 .quick-replies button { background: #eaf1ff; }
 .upload-row { border-top: 1px solid #e9edf5; padding: 10px; display: flex; gap: 8px; flex-wrap: wrap; }
 .chat-input { display: flex; gap: 8px; padding: 10px; border-top: 1px solid #e9edf5; }
