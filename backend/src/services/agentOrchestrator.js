@@ -16,6 +16,9 @@ export const STEPS = {
   completed: 'completed'
 };
 
+const CONFIRM_WORDS = new Set(['подтвердить', 'подтверждаю', 'ок', 'да', 'подтвердить запуск']);
+const CANCEL_WORDS = new Set(['отменить', 'отмена', 'нет']);
+
 function buildAgentMessage(agentKey, content, quickReplies = [], metadata = {}) {
   return {
     sender: 'agent',
@@ -47,33 +50,89 @@ async function setSessionStep(sessionId, step) {
   await query('UPDATE chat_sessions SET step=$1, updated_at=NOW() WHERE id=$2', [step, sessionId]);
 }
 
-function parseTargetInput(input) {
-  const clean = input.trim();
-  const idPattern = /^\d+(\s*,\s*\d+)*$/;
+function normalizeText(input) {
+  return input.trim().toLowerCase();
+}
 
-  if (idPattern.test(clean)) {
+function isConfirm(text) {
+  const normalized = normalizeText(text);
+  return CONFIRM_WORDS.has(normalized) || normalized.includes('подтверд');
+}
+
+function isCancel(text) {
+  const normalized = normalizeText(text);
+  return CANCEL_WORDS.has(normalized) || normalized.includes('отмен');
+}
+
+function parseIdList(clean) {
+  const idPattern = /^\d+(\s*,\s*\d+)*$/;
+  if (!idPattern.test(clean)) return null;
+  return clean.split(',').map((part) => Number(part.trim()));
+}
+
+async function parseNaturalRegionAndCount(input) {
+  const normalized = normalizeText(input);
+  const countMatch = normalized.match(/(\d+)\s*банкомат/);
+  const requestedCount = countMatch ? Number(countMatch[1]) : null;
+
+  const cities = await query('SELECT DISTINCT city FROM locations');
+  const matchedCity = cities.rows.map((row) => row.city).find((city) => normalized.includes(city.toLowerCase()));
+
+  if (!matchedCity) return null;
+  return { city: matchedCity, requestedCount };
+}
+
+async function parseTargetInput(input) {
+  const clean = input.trim();
+
+  const ids = parseIdList(clean);
+  if (ids) {
     return {
       targetType: 'ids',
       raw: clean,
-      ids: clean.split(',').map((part) => Number(part.trim()))
+      ids,
+      requestedCount: null
     };
   }
 
-  return {
-    targetType: 'region',
-    raw: clean,
-    region: clean
-  };
+  const natural = await parseNaturalRegionAndCount(clean);
+  if (natural) {
+    return {
+      targetType: 'region',
+      raw: natural.city,
+      region: natural.city,
+      requestedCount: natural.requestedCount
+    };
+  }
+
+  if (/^[а-яa-z\-\s]+$/i.test(clean) && clean.length >= 2) {
+    return {
+      targetType: 'region',
+      raw: clean,
+      region: clean,
+      requestedCount: null
+    };
+  }
+
+  return null;
 }
 
 async function resolveTarget(parsedTarget) {
+  if (!parsedTarget) return [];
+
   if (parsedTarget.targetType === 'ids') {
     const result = await query('SELECT * FROM locations WHERE id = ANY($1) ORDER BY id', [parsedTarget.ids]);
     return result.rows;
   }
 
   const result = await query('SELECT * FROM locations WHERE LOWER(city)=LOWER($1) ORDER BY id', [parsedTarget.region]);
-  return result.rows;
+  const locations = result.rows;
+
+  if (parsedTarget.requestedCount && parsedTarget.requestedCount > 0) {
+    return locations.slice(0, parsedTarget.requestedCount);
+  }
+
+  return locations;
 }
 
 function buildForecast(atmCount) {
@@ -130,7 +189,7 @@ export async function ensureWelcomeMessage(userId) {
 
   const welcome = buildAgentMessage(
     'campaign',
-    'Привет! Я помогу создать рекламную кампанию на банкоматах. Укажите регион (например, Москва) или список ID банкоматов (например, 1, 2, 3).',
+    'Привет! Укажите регион (например, Москва), список ID (например, 1,2,3) или фразу «Запусти кампанию на 5 банкоматах в Москве».',
     ['Выбрать Москву']
   );
 
@@ -140,13 +199,13 @@ export async function ensureWelcomeMessage(userId) {
 }
 
 async function handleSelectTarget(session, userId, text) {
-  const parsedTarget = parseTargetInput(text);
+  const parsedTarget = await parseTargetInput(text);
   const locations = await resolveTarget(parsedTarget);
 
-  if (locations.length === 0) {
+  if (!parsedTarget || locations.length === 0) {
     const notFoundMessage = buildAgentMessage(
       'campaign',
-      'Не нашёл подходящих устройств. Введите другой регион или корректный список ID банкоматов.',
+      'Не удалось найти банкоматы. Введите регион (Москва), ID (1,2,3) или фразу «на 5 банкоматах в Москве».',
       ['Выбрать Москву', 'Отменить']
     );
     await addAgentMessage(session.id, notFoundMessage);
@@ -164,17 +223,15 @@ async function handleSelectTarget(session, userId, text) {
 
   const response = buildAgentMessage(
     'campaign',
-    `Найдено ${locations.length} банкоматов по ${getTargetLabel(parsedTarget)}. Продолжить?`,
+    `Найдено ${locations.length} банкоматов в ${getTargetLabel(parsedTarget)}. Продолжить?`,
     ['Подтвердить', 'Отменить']
   );
   await addAgentMessage(session.id, response);
   return response;
 }
 
-async function handleConfirmTarget(session, text) {
-  const normalized = text.toLowerCase();
-
-  if (normalized.includes('отмен')) {
+async function handleConfirmTarget(session, userId, text) {
+  if (isCancel(text)) {
     await setSessionStep(session.id, STEPS.selectTarget);
     const response = buildAgentMessage(
       'campaign',
@@ -185,7 +242,7 @@ async function handleConfirmTarget(session, text) {
     return response;
   }
 
-  if (normalized.includes('подтверд')) {
+  if (isConfirm(text)) {
     await setSessionStep(session.id, STEPS.uploadImage);
     const response = buildAgentMessage(
       'campaign',
@@ -196,13 +253,22 @@ async function handleConfirmTarget(session, text) {
     return response;
   }
 
-  const fallback = buildAgentMessage('campaign', 'Пожалуйста, выберите действие.', ['Подтвердить', 'Отменить']);
+  const reparsedTarget = await parseTargetInput(text);
+  if (reparsedTarget) {
+    return handleSelectTarget(session, userId, text);
+  }
+
+  const fallback = buildAgentMessage(
+    'campaign',
+    'Нужна команда «Подтвердить» или «Отменить». Либо отправьте новый регион/ID, и я обновлю выбор.',
+    ['Подтвердить', 'Отменить', 'Выбрать Москву']
+  );
   await addAgentMessage(session.id, fallback);
   return fallback;
 }
 
 async function handleFinalize(session, userId, text) {
-  if (!text.toLowerCase().includes('подтверд')) {
+  if (!isConfirm(text)) {
     const response = buildAgentMessage(
       'campaign',
       'Для запуска кампании нажмите «Подтвердить запуск» или «Отменить».',
@@ -247,7 +313,7 @@ export async function handleUserMessage(userId, text) {
     await setSessionStep(session.id, STEPS.selectTarget);
     const response = buildAgentMessage(
       'campaign',
-      'Начинаем новую кампанию. Введите регион или список ID банкоматов.',
+      'Начинаем новую кампанию. Введите регион/ID или «на 5 банкоматах в Москве».',
       ['Выбрать Москву']
     );
     await addAgentMessage(session.id, response);
@@ -255,17 +321,18 @@ export async function handleUserMessage(userId, text) {
   }
 
   if (session.step === STEPS.selectTarget) {
-    return handleSelectTarget(session, userId, input === 'Выбрать Москву' ? 'Москва' : input);
+    const normalized = input.toLowerCase() === 'выбрать москву' ? 'Москва' : input;
+    return handleSelectTarget(session, userId, normalized);
   }
 
   if (session.step === STEPS.confirmTarget) {
-    return handleConfirmTarget(session, input);
+    return handleConfirmTarget(session, userId, input);
   }
 
   if (session.step === STEPS.uploadImage) {
     const response = buildAgentMessage(
       'moderator',
-      'Ожидаю файл изображения. Используйте кнопку «Загрузить изображение».',
+      'Сейчас жду файл изображения. Нажмите кнопку «Загрузить изображение».',
       ['Загрузить изображение']
     );
     await addAgentMessage(session.id, response);
@@ -275,7 +342,7 @@ export async function handleUserMessage(userId, text) {
   if (session.step === STEPS.legalApproval) {
     const response = buildAgentMessage(
       'campaign',
-      'Ожидаю юридическое согласование (PDF или изображение).',
+      'Сейчас жду файл юридического согласования (PDF/изображение).',
       ['Загрузить согласование']
     );
     await addAgentMessage(session.id, response);
@@ -283,7 +350,7 @@ export async function handleUserMessage(userId, text) {
   }
 
   if (session.step === STEPS.finalize) {
-    if (input.toLowerCase().includes('отмен')) {
+    if (isCancel(input)) {
       await query("UPDATE campaigns SET status='completed', updated_at=NOW() WHERE id=$1", [session.campaign_id]);
       await setSessionStep(session.id, STEPS.completed);
       const response = buildAgentMessage('campaign', 'Запуск отменён. Кампания завершена без активации.');
